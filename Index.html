@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consulta de Consultorios SUS</title>
+    
+    <!-- PapaParse para leer el CSV de Google Sheets -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    
+    <!-- SheetJS (XLSX) para descargar en Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f6f9;
+            color: #333;
+        }
+        h1 {
+            color: #1a5276;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        input[type="text"] {
+            padding: 10px;
+            width: 300px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .btn-excel {
+            background-color: #27ae60;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .btn-excel:hover {
+            background-color: #219150;
+        }
+        .table-container {
+            overflow-x: auto;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            border-radius: 4px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #2980b9;
+            color: white;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        #loading {
+            font-weight: bold;
+            color: #1a5276;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Directorio de Consultorios SUS</h1>
+
+    <div class="controls">
+        <input type="text" id="searchInput" onkeyup="filtrarTabla()" placeholder="Buscar por Municipio, Localidad, Consultorio o DBS...">
+        <button class="btn-excel" onclick="descargarExcel()">Descargar en Excel</button>
+    </div>
+
+    <div id="loading">Cargando datos desde Google Sheets...</div>
+
+    <div class="table-container">
+        <table id="tablaConsultorios" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Municipio</th>
+                    <th>Localidad</th>
+                    <th>Consultorio SUS</th>
+                    <th>DBS</th>
+                </tr>
+            </thead>
+            <tbody id="tablaCuerpo">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        // REEMPLAZA ESTA URL CON TU LINK .CSV DE GOOGLE SHEETS (Paso 1)
+        const URL_GOOGLE_SHEET = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQPYIPwDuPSTJSKXVQTdFfPZUdlmDaCdI2F3zXRcfVQWcdom8qm-bHwsnpBkEL9RY36n1a5nmjonm1x/pub?gid=0&single=true&output=csv";
+
+        let datosGlobales = [];
+
+        // Cargar datos al iniciar la página
+        window.onload = function() {
+            Papa.parse(URL_GOOGLE_SHEET, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    datosGlobales = results.data;
+                    mostrarDatos(datosGlobales);
+                    document.getElementById("loading").style.display = "none";
+                    document.getElementById("tablaConsultorios").style.display = "table";
+                },
+                error: function(err) {
+                    document.getElementById("loading").innerText = "Error al cargar los datos. Revisa la URL publicada.";
+                    console.error(err);
+                }
+            });
+        };
+
+        // Renderizar la tabla con la información
+        function mostrarDatos(datos) {
+            const tbody = document.getElementById("tablaCuerpo");
+            tbody.innerHTML = "";
+
+            datos.forEach(row => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td>${row["Municipio"] || row["MUNICIPIO"] || ''}</td>
+                    <td>${row["Localidad"] || row["LOCALIDAD"] || ''}</td>
+                    <td>${row["Consultorio SUS"] || row["CONSULTORIO SUS"] || ''}</td>
+                    <td>${row["DBS"] || ''}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Función de filtro/búsqueda en tiempo real
+        function filtrarTabla() {
+            const busqueda = document.getElementById("searchInput").value.toLowerCase();
+            const datosFiltrados = datosGlobales.filter(row => {
+                const municipio = (row["Municipio"] || row["MUNICIPIO"] || '').toLowerCase();
+                const localidad = (row["Localidad"] || row["LOCALIDAD"] || '').toLowerCase();
+                const consultorio = (row["Consultorio SUS"] || row["CONSULTORIO SUS"] || '').toLowerCase();
+                const dbs = (row["DBS"] || '').toLowerCase();
+
+                return municipio.includes(busqueda) || 
+                       localidad.includes(busqueda) || 
+                       consultorio.includes(busqueda) || 
+                       dbs.includes(busqueda);
+            });
+            mostrarDatos(datosFiltrados);
+        }
+
+        // Función para descargar los datos filtrados o completos en archivo Excel (.xlsx)
+        function descargarExcel() {
+            if (datosGlobales.length === 0) {
+                alert("No hay datos para descargar.");
+                return;
+            }
+            
+            // Crea un libro de trabajo y una hoja con SheetJS
+            const worksheet = XLSX.utils.json_to_sheet(datosGlobales);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Consultorios SUS");
+
+            // Descarga el archivo
+            XLSX.writeFile(workbook, "Consultorios_SUS.xlsx");
+        }
+    </script>
+</body>
+</html>
