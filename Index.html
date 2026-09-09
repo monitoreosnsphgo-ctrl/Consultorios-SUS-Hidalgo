@@ -20,31 +20,41 @@
         }
         h1 {
             color: #1a5276;
-        }
-        .controls {
-            display: flex;
-            gap: 15px;
             margin-bottom: 20px;
-            flex-wrap: wrap;
-            align-items: center;
         }
-        input[type="text"] {
-            padding: 10px;
-            width: 300px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
+        .header-actions {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
         .btn-excel {
             background-color: #27ae60;
             color: white;
-            padding: 10px 15px;
+            padding: 10px 16px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             font-weight: bold;
+            font-size: 14px;
         }
         .btn-excel:hover {
             background-color: #219150;
+        }
+        .btn-reset {
+            background-color: #7f8c8d;
+            color: white;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .btn-reset:hover {
+            background-color: #6c7a7d;
         }
         .table-container {
             overflow-x: auto;
@@ -66,6 +76,17 @@
             color: white;
             position: sticky;
             top: 0;
+            vertical-align: top;
+        }
+        .filter-input, .filter-select {
+            width: 100%;
+            padding: 6px;
+            margin-top: 8px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #333;
         }
         tr:hover {
             background-color: #f1f1f1;
@@ -73,6 +94,12 @@
         #loading {
             font-weight: bold;
             color: #1a5276;
+            margin-bottom: 15px;
+        }
+        #counter {
+            font-size: 14px;
+            font-weight: bold;
+            color: #2c3e50;
         }
     </style>
 </head>
@@ -80,9 +107,12 @@
 
     <h1>Directorio de Consultorios SUS</h1>
 
-    <div class="controls">
-        <input type="text" id="searchInput" onkeyup="filtrarTabla()" placeholder="Buscar por Municipio, Localidad, Consultorio o DBS...">
-        <button class="btn-excel" onclick="descargarExcel()">Descargar en Excel</button>
+    <div class="header-actions">
+        <div id="counter">Cargando registros...</div>
+        <div>
+            <button class="btn-reset" onclick="limpiarFiltros()">Limpiar Filtros</button>
+            <button class="btn-excel" onclick="descargarExcel()">Descargar en Excel</button>
+        </div>
     </div>
 
     <div id="loading">Cargando datos desde Google Sheets...</div>
@@ -91,10 +121,26 @@
         <table id="tablaConsultorios" style="display: none;">
             <thead>
                 <tr>
-                    <th>Municipio</th>
-                    <th>Localidad</th>
-                    <th>Consultorio SUS</th>
-                    <th>DBS</th>
+                    <th>
+                        Municipio
+                        <select id="filterMunicipio" class="filter-select" onchange="filtrarTabla()">
+                            <option value="">-- Todos --</option>
+                        </select>
+                    </th>
+                    <th>
+                        Localidad
+                        <input type="text" id="filterLocalidad" class="filter-input" onkeyup="filtrarTabla()" placeholder="Buscar localidad...">
+                    </th>
+                    <th>
+                        Consultorio SUS
+                        <input type="text" id="filterConsultorio" class="filter-input" onkeyup="filtrarTabla()" placeholder="Buscar consultorio...">
+                    </th>
+                    <th>
+                        DBS
+                        <select id="filterDBS" class="filter-select" onchange="filtrarTabla()">
+                            <option value="">-- Todos --</option>
+                        </select>
+                    </th>
                 </tr>
             </thead>
             <tbody id="tablaCuerpo">
@@ -104,9 +150,10 @@
 
     <script>
         // REEMPLAZA ESTA URL CON TU LINK .CSV DE GOOGLE SHEETS (Paso 1)
-        const URL_GOOGLE_SHEET = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQPYIPwDuPSTJSKXVQTdFfPZUdlmDaCdI2F3zXRcfVQWcdom8qm-bHwsnpBkEL9RY36n1a5nmjonm1x/pub?gid=0&single=true&output=csv";
+        const URL_GOOGLE_SHEET = "https://docs.google.com/spreadsheets/d/e/2PACX-1vR_TU_LINK_AQUI/pub?output=csv";
 
         let datosGlobales = [];
+        let datosFiltradosActuales = [];
 
         // Cargar datos al iniciar la página
         window.onload = function() {
@@ -116,6 +163,8 @@
                 skipEmptyLines: true,
                 complete: function(results) {
                     datosGlobales = results.data;
+                    datosFiltradosActuales = [...datosGlobales];
+                    poblarDesplegables(datosGlobales);
                     mostrarDatos(datosGlobales);
                     document.getElementById("loading").style.display = "none";
                     document.getElementById("tablaConsultorios").style.display = "table";
@@ -127,7 +176,36 @@
             });
         };
 
-        // Renderizar la tabla con la información
+        // Llenar listas desplegables de Municipio y DBS con valores únicos ordenados
+        function poblarDesplegables(datos) {
+            const municipios = new Set();
+            const dbsSet = new Set();
+
+            datos.forEach(row => {
+                const muni = row["Municipio"] || row["MUNICIPIO"];
+                const dbs = row["DBS"];
+                if (muni) municipios.add(muni.trim());
+                if (dbs) dbsSet.add(dbs.trim());
+            });
+
+            const selectMunicipio = document.getElementById("filterMunicipio");
+            Array.from(municipios).sort().forEach(m => {
+                const option = document.createElement("option");
+                option.value = m;
+                option.textContent = m;
+                selectMunicipio.appendChild(option);
+            });
+
+            const selectDBS = document.getElementById("filterDBS");
+            Array.from(dbsSet).sort().forEach(d => {
+                const option = document.createElement("option");
+                option.value = d;
+                option.textContent = d;
+                selectDBS.appendChild(option);
+            });
+        }
+
+        // Renderizar las filas de la tabla
         function mostrarDatos(datos) {
             const tbody = document.getElementById("tablaCuerpo");
             tbody.innerHTML = "";
@@ -142,38 +220,54 @@
                 `;
                 tbody.appendChild(tr);
             });
+
+            document.getElementById("counter").innerText = `Mostrando ${datos.length} de ${datosGlobales.length} registros`;
         }
 
-        // Función de filtro/búsqueda en tiempo real
+        // Filtrado por cada encabezado
         function filtrarTabla() {
-            const busqueda = document.getElementById("searchInput").value.toLowerCase();
-            const datosFiltrados = datosGlobales.filter(row => {
+            const valMunicipio = document.getElementById("filterMunicipio").value.toLowerCase();
+            const valLocalidad = document.getElementById("filterLocalidad").value.toLowerCase();
+            const valConsultorio = document.getElementById("filterConsultorio").value.toLowerCase();
+            const valDBS = document.getElementById("filterDBS").value.toLowerCase();
+
+            datosFiltradosActuales = datosGlobales.filter(row => {
                 const municipio = (row["Municipio"] || row["MUNICIPIO"] || '').toLowerCase();
                 const localidad = (row["Localidad"] || row["LOCALIDAD"] || '').toLowerCase();
                 const consultorio = (row["Consultorio SUS"] || row["CONSULTORIO SUS"] || '').toLowerCase();
                 const dbs = (row["DBS"] || '').toLowerCase();
 
-                return municipio.includes(busqueda) || 
-                       localidad.includes(busqueda) || 
-                       consultorio.includes(busqueda) || 
-                       dbs.includes(busqueda);
+                const matchMuni = !valMunicipio || municipio === valMunicipio;
+                const matchLoc = !valLocalidad || localidad.includes(valLocalidad);
+                const matchConsultorio = !valConsultorio || consultorio.includes(valConsultorio);
+                const matchDBS = !valDBS || dbs === valDBS;
+
+                return matchMuni && matchLoc && matchConsultorio && matchDBS;
             });
-            mostrarDatos(datosFiltrados);
+
+            mostrarDatos(datosFiltradosActuales);
         }
 
-        // Función para descargar los datos filtrados o completos en archivo Excel (.xlsx)
+        // Limpiar todos los filtros
+        function limpiarFiltros() {
+            document.getElementById("filterMunicipio").value = "";
+            document.getElementById("filterLocalidad").value = "";
+            document.getElementById("filterConsultorio").value = "";
+            document.getElementById("filterDBS").value = "";
+            filtrarTabla();
+        }
+
+        // Descargar en formato Excel (.xlsx) los datos filtrados o completos
         function descargarExcel() {
-            if (datosGlobales.length === 0) {
-                alert("No hay datos para descargar.");
+            if (datosFiltradosActuales.length === 0) {
+                alert("No hay datos visibles para descargar.");
                 return;
             }
             
-            // Crea un libro de trabajo y una hoja con SheetJS
-            const worksheet = XLSX.utils.json_to_sheet(datosGlobales);
+            const worksheet = XLSX.utils.json_to_sheet(datosFiltradosActuales);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Consultorios SUS");
 
-            // Descarga el archivo
             XLSX.writeFile(workbook, "Consultorios_SUS.xlsx");
         }
     </script>
